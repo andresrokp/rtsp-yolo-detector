@@ -6,14 +6,23 @@ import requests
 import base64
 import numpy as np
 from dotenv import dotenv_values
+from pytube import YouTube
 
-CONFIG = dotenv_values
+CONFIG = dotenv_values('.env')
 # URL a la que se hará envío por POST
-TB_DEVICE_TELTRY_ENDPOINT = CONFIG.get('TB_DEVICE_TELTRY_ENDPOINT')
+TB_DEVICE_TELTRY_ENDPOINT = CONFIG['TB_DEVICE_TELTRY_ENDPOINT']
 # URL para atributo de la imagen
-TB_DEVICE_ATTS_ENDPOINT = CONFIG.get('TB_DEVICE_ATTS_ENDPOINT')
+TB_DEVICE_ATTS_ENDPOINT = CONFIG['TB_DEVICE_ATTS_ENDPOINT']
 
-cap = cv2.VideoCapture(0)
+
+youtube_url = "https://www.youtube.com/watch?v=HOk8siZLZqk"
+
+# Get video stream URL
+youtube = YouTube(youtube_url)
+video_stream = youtube.streams.filter(file_extension="mp4").first()
+
+# OpenCV video capture
+cap = cv2.VideoCapture(video_stream.url)
 
 if not cap.isOpened():
     print("Error: No se pudo abrir la cámara o video.")
@@ -71,7 +80,7 @@ while True:
         print("Error: No se pudo leer el frame.")
         break
 
-    results = model(img, stream=True)
+    results = model(img) #, stream=True
 
     current_object_counts = {}
     for r in results:
@@ -118,7 +127,7 @@ while True:
 
 
             # Mostrar el video en tiempo real
-            cv2.imshow("Video en tiempo real", img)
+            # cv2.imshow("Video en tiempo real", img)
 
             # Actualizar el registro de objetos detectados
         last_object_counts = current_object_counts
