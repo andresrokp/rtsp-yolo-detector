@@ -1,20 +1,20 @@
-from ultralytics import YOLO
+# Import necessary libraries
 import cv2
-import cvzone
 import math
 import requests
 import base64
-import numpy as np
 from dotenv import dotenv_values
 from pytube import YouTube
+from ultralytics import YOLO
+import cvzone
+import numpy as np
 
+# Load environment variables
 CONFIG = dotenv_values('.env')
-# URL a la que se hará envío por POST
 TB_DEVICE_TELTRY_ENDPOINT = CONFIG['TB_DEVICE_TELTRY_ENDPOINT']
-# URL para atributo de la imagen
 TB_DEVICE_ATTS_ENDPOINT = CONFIG['TB_DEVICE_ATTS_ENDPOINT']
 
-
+# YouTube video URL
 youtube_url = "https://www.youtube.com/watch?v=HOk8siZLZqk"
 
 # Get video stream URL
@@ -24,11 +24,12 @@ video_stream = youtube.streams.filter(file_extension="mp4").first()
 # OpenCV video capture
 cap = cv2.VideoCapture(video_stream.url)
 
+# Check if the video capture is successful
 if not cap.isOpened():
     print("Error: No se pudo abrir la cámara o video.")
     exit()
 
-# Nombres de clases
+# Object detection class names
 classNames = ["person", "bicycle", "car", "motorbike", "aeroplane", "bus", "train", "truck", "boat",
               "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
               "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella",
@@ -40,49 +41,44 @@ classNames = ["person", "bicycle", "car", "motorbike", "aeroplane", "bus", "trai
               "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors",
               "teddy bear", "hair drier", "toothbrush"
               ]
-# clases no deseadas bypass
+
+# Unwanted object detection classes
 unwanted_classes = ['chair', 'tvmonitor', 'boat']
 unwanted_indices = [classNames.index(cls) for cls in unwanted_classes if cls in classNames]
 
-
-
-
+# YOLO model initialization
 model = YOLO("../Yolo-Weights/yolov8n.pt")
 
-
+# Function to send image as base64 to a specified URL
 def send_image_as_base64(url, image):
-    # Convertir la imagen a formato JPEG en memoria
     retval, buffer = cv2.imencode('.jpg', image)
-    # Codificar la imagen como Base64
     image_base64 = base64.b64encode(buffer).decode('utf-8')
-
-    # Crear el payload con la imagen codificada en Base64
     data = {
         'fotogenica': f"data:image/jpeg;base64,{image_base64}"
     }
-
-    # Realizar la solicitud POST
     response = requests.post(url, json=data)
-
-    # Retornar la respuesta (por si deseas hacer algo con ella)
     return response
 
-
-# Registro inicial de objetos detectados
+# Initial object detection counts
 last_object_counts = {}
 
-
+# Main loop for video processing
 while True:
-
+    # Read a frame from the video stream
     success, img = cap.read()
 
+    # Check if the frame is successfully read
     if not success:
         print("Error: No se pudo leer el frame.")
         break
 
-    results = model(img) #, stream=True
+    # Perform object detection using YOLO model
+    results = model(img)
 
+    # Dictionary to store current object counts
     current_object_counts = {}
+
+    # Loop through the detection results
     for r in results:
         boxes = r.boxes
         for box in boxes:
@@ -92,49 +88,43 @@ while True:
             cvzone.cornerRect(img, bbox)
             conf = math.ceil(box.conf[0] * 100) / 100
             cls = int(box.cls[0])
-            if cls not in unwanted_indices:  # Solo procesa la detección si la clase no es no deseada
+
+            # Check if the detected class is not unwanted
+            if cls not in unwanted_indices:
                 cvzone.putTextRect(img, f'{classNames[cls]} {conf}', (max(0, x1), max(35, y1)), scale=1, thickness=2)
 
-                # Actualizar el conteo de objetos detectados
+                # Update the count of detected objects
                 if classNames[cls] in current_object_counts:
                     current_object_counts[classNames[cls]] += 1
                 else:
                     current_object_counts[classNames[cls]] = 1
 
-            # Si hay un cambio en la detección de objetos, enviar información
-       # if current_object_counts != last_object_counts+1:
-            print("Cambios detectados en los objetos.")
-            
-            # Imprimir el payload antes de enviar
-            print("Payload to be sent:", current_object_counts)
+    # Check if there are changes in the detected objects
+    if current_object_counts != last_object_counts:
+        print("Cambios detectados en los objetos.")
+        print("Payload to be sent:", current_object_counts)
 
-            # Enviar el diccionario como JSON
-            response = requests.post(TB_DEVICE_TELTRY_ENDPOINT, json=current_object_counts)
-            # Y se envia la imagen donde hubo el cambio.
-            image_response_test = send_image_as_base64(TB_DEVICE_ATTS_ENDPOINT,img)
-            print(f"Response Code: {image_response_test.status_code}")
-            print(image_response_test.text)
+        # Send the counts to the specified endpoint
+        response = requests.post(TB_DEVICE_TELTRY_ENDPOINT, json=current_object_counts)
 
-            # Imprimiendo el código de respuesta y el contenido de la respuesta
-            print(f"Response Code: {response.status_code}")
-            print(f"Response Content: {response.text}")
+        # Send the image where the change occurred
+        image_response_test = send_image_as_base64(TB_DEVICE_ATTS_ENDPOINT, img)
+        print(f"Response Code: {image_response_test.status_code}")
+        print(image_response_test.text)
 
-            # Por ahora, solo imprimiré los cambios detectados en la consola
-            print("Objetos en el frame anterior:", last_object_counts)
-            print("Objetos en el frame actual:", current_object_counts)
+        # Print the response code and content
+        print(f"Response Code: {response.status_code}")
+        print(f"Response Content: {response.text}")
 
+        # cv2.imshow("Video en tiempo real", img)
 
+    # Update the last object counts for comparison in the next iteration
+    last_object_counts = current_object_counts
 
+    # Check if the 'q' key is pressed to exit the loop
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
-            # Mostrar el video en tiempo real
-            # cv2.imshow("Video en tiempo real", img)
-
-            # Actualizar el registro de objetos detectados
-        last_object_counts = current_object_counts
-
-        # Espera 1 ms y verifica si se presionó la tecla 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-cap.release(1)
+# Release the video capture and close all windows
+cap.release()
 cv2.destroyAllWindows()
