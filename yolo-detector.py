@@ -13,16 +13,22 @@ import numpy as np
 CONFIG = dotenv_values('.env')
 TB_DEVICE_TELTRY_ENDPOINT = CONFIG['TB_DEVICE_TELTRY_ENDPOINT']
 TB_DEVICE_ATTS_ENDPOINT = CONFIG['TB_DEVICE_ATTS_ENDPOINT']
+RTSP_CAM_URL = CONFIG['RTSP_CAM_URL']
+
+# SOURCES
 
 # YouTube video URL
 youtube_url = "https://www.youtube.com/watch?v=HOk8siZLZqk"
-
 # Get video stream URL
 youtube = YouTube(youtube_url)
-video_stream = youtube.streams.filter(file_extension="mp4").first()
+yt_video_stream = youtube.streams.filter(file_extension="mp4").first()
+
+rtsp_cam = RTSP_CAM_URL
+
+video_sources = [yt_video_stream, rtsp_cam]
 
 # OpenCV video capture
-cap = cv2.VideoCapture(video_stream.url)
+cap = cv2.VideoCapture(video_sources[1])
 
 # Check if the video capture is successful
 if not cap.isOpened():
@@ -38,12 +44,12 @@ classNames = ["person", "bicycle", "car", "motorbike", "aeroplane", "bus", "trai
               "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli",
               "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed",
               "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone",
-              "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors",
+              "microwave", "oven", "toaster", "sink", "refrigerator", "book", "vase", "scissors",
               "teddy bear", "hair drier", "toothbrush"
               ]
 
 # Unwanted object detection classes
-unwanted_classes = ['chair', 'tvmonitor', 'boat']
+unwanted_classes = ['chair', 'tvmonitor', 'boat', "clock"]
 unwanted_indices = [classNames.index(cls) for cls in unwanted_classes if cls in classNames]
 
 # YOLO model initialization
@@ -78,31 +84,32 @@ while True:
     # Dictionary to store current object counts
     current_object_counts = {}
 
-    # Loop through the detection results
-    for r in results:
-        boxes = r.boxes
-        for box in boxes:
-            x1, y1, x2, y2 = map(int, box.xyxy[0])
-            w, h = x2 - x1, y2 - y1
-            bbox = x1, y1, w, h
-            cvzone.cornerRect(img, bbox)
-            conf = math.ceil(box.conf[0] * 100) / 100
-            cls = int(box.cls[0])
+    # Process only when more than 1 object and no repeated
+    if current_object_counts != last_object_counts and current_object_counts > 0:
+        
+        # Loop through the detection results
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                w, h = x2 - x1, y2 - y1
+                bbox = x1, y1, w, h
+                cvzone.cornerRect(img, bbox)
+                conf = math.ceil(box.conf[0] * 100) / 100
+                cls = int(box.cls[0])
 
-            # Check if the detected class is not unwanted
-            if cls not in unwanted_indices:
-                cvzone.putTextRect(img, f'{classNames[cls]} {conf}', (max(0, x1), max(35, y1)), scale=1, thickness=2)
+                # Check if the detected class is not unwanted
+                if cls not in unwanted_indices:
+                    cvzone.putTextRect(img, f'{classNames[cls]} {conf}', (max(0, x1), max(35, y1)), scale=1, thickness=2)
 
-                # Update the count of detected objects
-                if classNames[cls] in current_object_counts:
-                    current_object_counts[classNames[cls]] += 1
-                else:
-                    current_object_counts[classNames[cls]] = 1
-
-    # Check if there are changes in the detected objects
-    if current_object_counts != last_object_counts:
+                    # Update the count of detected objects
+                    if classNames[cls] in current_object_counts:
+                        current_object_counts[classNames[cls]] += 1
+                    else:
+                        current_object_counts[classNames[cls]] = 1
+        
         print("Cambios detectados en los objetos.")
-        print("Payload to be sent:", current_object_counts)
+        print("Payload to be post:", current_object_counts)
 
         # Send the counts to the specified endpoint
         response = requests.post(TB_DEVICE_TELTRY_ENDPOINT, json=current_object_counts)
