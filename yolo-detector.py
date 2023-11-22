@@ -9,6 +9,8 @@ from ultralytics import YOLO
 import cvzone
 import numpy as np
 
+print('\nSetting up variables...')
+
 # Load environment variables
 CONFIG = dotenv_values('.env')
 TB_DEVICE_TELTRY_ENDPOINT = CONFIG['TB_DEVICE_TELTRY_ENDPOINT']
@@ -27,6 +29,7 @@ rtsp_cam = RTSP_CAM_URL
 
 video_sources = [yt_video_stream, rtsp_cam]
 
+print('\nConecting stream source...')
 # OpenCV video capture
 cap = cv2.VideoCapture(video_sources[1])
 
@@ -53,6 +56,7 @@ unwanted_classes = ['chair', 'tvmonitor', 'boat', "clock"]
 unwanted_indices = [classNames.index(cls) for cls in unwanted_classes if cls in classNames]
 
 # YOLO model initialization
+print('\nLoading YOLO model...')
 model = YOLO("../Yolo-Weights/yolov8n.pt")
 
 # Function to send image as base64 to a specified URL
@@ -68,6 +72,7 @@ def send_image_as_base64(url, image):
 # Initial object detection counts
 last_object_counts = {}
 
+print('\nInitializing reading loop...')
 # Main loop for video processing
 while True:
     # Read a frame from the video stream
@@ -79,49 +84,50 @@ while True:
         break
 
     # Perform object detection using YOLO model
-    results = model(img)
+    results = model(img, verbose=False)[0] #save=True, 
 
     # Dictionary to store current object counts
     current_object_counts = {}
 
+    print('.',end=' ')
+    # Loop through the detection results
+    for r in results:
+        boxes = r.boxes
+        for box in boxes:
+            x1, y1, x2, y2 = map(int, box.xyxy[0])
+            w, h = x2 - x1, y2 - y1
+            bbox = x1, y1, w, h
+            cvzone.cornerRect(img, bbox)
+            conf = math.ceil(box.conf[0] * 100) / 100
+            objClass = int(box.cls[0])
+
+            # Check if the detected class is not unwanted
+            if objClass not in unwanted_indices:
+                cvzone.putTextRect(img, f'{classNames[objClass]} {conf}', (max(0, x1), max(35, y1)), scale=1, thickness=2)
+
+                # Update the count of detected objects
+                if classNames[objClass] in current_object_counts:
+                    current_object_counts[classNames[objClass]] += 1
+                else:
+                    current_object_counts[classNames[objClass]] = 1
+                    
     # Process only when more than 1 object and no repeated
-    if current_object_counts != last_object_counts and current_object_counts > 0:
+    if len(current_object_counts) != len(last_object_counts) and len(current_object_counts) > 1:
         
-        # Loop through the detection results
-        for r in results:
-            boxes = r.boxes
-            for box in boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                w, h = x2 - x1, y2 - y1
-                bbox = x1, y1, w, h
-                cvzone.cornerRect(img, bbox)
-                conf = math.ceil(box.conf[0] * 100) / 100
-                cls = int(box.cls[0])
-
-                # Check if the detected class is not unwanted
-                if cls not in unwanted_indices:
-                    cvzone.putTextRect(img, f'{classNames[cls]} {conf}', (max(0, x1), max(35, y1)), scale=1, thickness=2)
-
-                    # Update the count of detected objects
-                    if classNames[cls] in current_object_counts:
-                        current_object_counts[classNames[cls]] += 1
-                    else:
-                        current_object_counts[classNames[cls]] = 1
         
         print("Cambios detectados en los objetos.")
         print("Payload to be post:", current_object_counts)
 
         # Send the counts to the specified endpoint
         response = requests.post(TB_DEVICE_TELTRY_ENDPOINT, json=current_object_counts)
+        print(f"Teltry response Code: {response.status_code}")
+        print(f"Teltry response Content: {response.text}")
 
         # Send the image where the change occurred
         image_response_test = send_image_as_base64(TB_DEVICE_ATTS_ENDPOINT, img)
-        print(f"Response Code: {image_response_test.status_code}")
+        print(f"Atts img response Code: {image_response_test.status_code}")
         print(image_response_test.text)
 
-        # Print the response code and content
-        print(f"Response Code: {response.status_code}")
-        print(f"Response Content: {response.text}")
 
         # cv2.imshow("Video en tiempo real", img)
 
