@@ -73,6 +73,15 @@ FEAT: connect to an IP camera
 + refactor: rect draw inside condition
 Worked :)
 + problem: the TB image post is failing too often
+---
+FEAT: post conditioned to time
++ import time lib
++ set a timed condition for detection
++ refactor code: continue over indentation
++ LEARN: the model gives an standar numbering of detections... the class array should be ordered accordingly
++ Worked :)
+---
+
 
 
 

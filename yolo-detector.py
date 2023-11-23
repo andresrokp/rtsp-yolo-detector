@@ -8,6 +8,7 @@ from pytube import YouTube
 from ultralytics import YOLO
 import cvzone
 import numpy as np
+import time
 
 print('\nSetting up variables...')
 
@@ -19,12 +20,12 @@ RTSP_CAM_URL = CONFIG['RTSP_CAM_URL']
 
 # SOURCES
 
-# YouTube video URL
-youtube_url = "https://www.youtube.com/watch?v=HOk8siZLZqk"
-# Get video stream URL
-youtube = YouTube(youtube_url)
-yt_video_stream = youtube.streams.filter(file_extension="mp4").first()
-
+# Get video stream from youtube
+# youtube_url = "https://www.youtube.com/watch?v=HOk8siZLZqk"
+# youtube = YouTube(youtube_url)
+# yt_video_stream = youtube.streams.filter(file_extension="mp4").first()
+yt_video_stream='not_now'
+# get rtsp secret url
 rtsp_cam = RTSP_CAM_URL
 
 video_sources = [yt_video_stream, rtsp_cam]
@@ -47,7 +48,7 @@ classNames = ["person", "bicycle", "car", "motorbike", "aeroplane", "bus", "trai
               "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli",
               "carrot", "hot dog", "pizza", "donut", "cake", "chair", "sofa", "pottedplant", "bed",
               "diningtable", "toilet", "tvmonitor", "laptop", "mouse", "remote", "keyboard", "cell phone",
-              "microwave", "oven", "toaster", "sink", "refrigerator", "book", "vase", "scissors",
+              "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors",
               "teddy bear", "hair drier", "toothbrush"
               ]
 
@@ -59,8 +60,11 @@ unwanted_indices = [classNames.index(cls) for cls in unwanted_classes if cls in 
 print('\nLoading YOLO model...')
 model = YOLO("../Yolo-Weights/yolov8n.pt")
 
-# Function to send image as base64 to a specified URL
-def send_image_as_base64(url, image):
+# --------------------------
+# HELPERS
+
+# Function to convert and post image
+def base64_and_post(url, image):
     retval, buffer = cv2.imencode('.jpg', image)
     image_base64 = base64.b64encode(buffer).decode('utf-8')
     data = {
@@ -69,28 +73,52 @@ def send_image_as_base64(url, image):
     response = requests.post(url, json=data)
     return response
 
+# 
+def post_TB(current_object_counts, img):
+    print("Cambios detectados en los objetos.")
+    print("Payload to be post:", current_object_counts)
+
+    # Send the counts to the specified endpoint
+    response = requests.post(TB_DEVICE_TELTRY_ENDPOINT, json=current_object_counts)
+    print(f"Teltry response Code: {response.status_code}")
+    print(f"Teltry response Content: {response.text}")
+
+    # Send the image where the change occurred
+    image_response_test = base64_and_post(TB_DEVICE_ATTS_ENDPOINT, img)
+    print(f"Atts img response Code: {image_response_test.status_code}")
+    print(f"Teltry response Content: {image_response_test.text}")
+
 # Initial object detection counts
 last_object_counts = {}
+last_post_time = time.time()
+POST_INTERVAL_TIME = 2
+
+# -----------------------------------------
+# MAIN VIDEO LOOP
 
 print('\nInitializing reading loop...')
-# Main loop for video processing
 while True:
-    # Read a frame from the video stream
+    print('.',end=' ')
+    # initialize utilities
+    current_time = time.time()
+    current_object_counts = {}
+    # Read frame from stream
     success, img = cap.read()
-
-    # Check if the frame is successfully read
+    # Check read ok
     if not success:
         print("Error: No se pudo leer el frame.")
-        break
+        time.sleep(1)
+        continue
 
-    # Perform object detection using YOLO model
+    # jump iteration and avoid to process if has not passed enough time
+    if current_time < last_post_time + POST_INTERVAL_TIME:
+        continue
+    print('+',end=' ')
+
+    # Perform object detection using YOLO model, no log everything
     results = model(img, verbose=False)[0] #save=True, 
 
-    # Dictionary to store current object counts
-    current_object_counts = {}
-
-    print('.',end=' ')
-    # Loop through the detection results
+    # Organize each result
     for r in results:
         boxes = r.boxes
         for box in boxes:
@@ -112,29 +140,17 @@ while True:
                     current_object_counts[classNames[objClass]] = 1
                     
     # Process only when more than 1 object and no repeated
-    if len(current_object_counts) != len(last_object_counts) and len(current_object_counts) > 1:
-        
-        
-        print("Cambios detectados en los objetos.")
-        print("Payload to be post:", current_object_counts)
-
-        # Send the counts to the specified endpoint
-        response = requests.post(TB_DEVICE_TELTRY_ENDPOINT, json=current_object_counts)
-        print(f"Teltry response Code: {response.status_code}")
-        print(f"Teltry response Content: {response.text}")
-
-        # Send the image where the change occurred
-        image_response_test = send_image_as_base64(TB_DEVICE_ATTS_ENDPOINT, img)
-        print(f"Atts img response Code: {image_response_test.status_code}")
-        print(image_response_test.text)
-
-
-        # cv2.imshow("Video en tiempo real", img)
+    if current_object_counts == last_object_counts:
+        continue
+    print('x',end=' ')
+    
+    post_TB(current_object_counts, img)
+    last_post_time = time.time()
 
     # Update the last object counts for comparison in the next iteration
     last_object_counts = current_object_counts
 
-    # Check if the 'q' key is pressed to exit the loop
+    # Exit condition
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
