@@ -66,6 +66,13 @@ Code worked :)
 + caveat: the program allways dowload the video first
 + TODO: Pull a cache or download the vid for real
 ---
+FEAT: connect to an IP camera
++ read Tapo C200 docu
++ standar URL is: `rtsp://cam_name:cam_pass@192.168.XX.XXX:554/stream2` or stream1 for HQ
++ Insert URL as cv2 stream source
++ refactor: rect draw inside condition
+Worked :)
++ problem: the TB image post is failing too often
 
 
 
