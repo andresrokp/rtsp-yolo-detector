@@ -81,7 +81,8 @@ FEAT: post conditioned to time
 + LEARN: the model gives an standar numbering of detections... the class array should be ordered accordingly
 + Worked :)
 ---
-
-
-
+FIX: data landing in TB
++ A widget gets 12 persons, but the time series get decimal persons and a futura ts
++ Device: camera_FTP, Type: AI_CAM, Rule: ai_cam
++ Little mistake: Dashboard timeframe was aggregating
 
